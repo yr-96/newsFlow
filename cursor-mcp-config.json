@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "newsflow-extract": {
+      "command": "/Users/hunliji/project/newsFlow/venv/bin/python",
+      "args": ["-m", "mcp_servers.newsflow_extract.server"],
+      "cwd": "/Users/hunliji/project/newsFlow"
+    },
+    "newsflow-writer": {
+      "command": "/Users/hunliji/project/newsFlow/venv/bin/python",
+      "args": ["-m", "mcp_servers.newsflow_writer.server"],
+      "cwd": "/Users/hunliji/project/newsFlow"
+    }
+  }
+}
+
