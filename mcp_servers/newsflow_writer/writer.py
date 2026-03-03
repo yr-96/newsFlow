@@ -15,7 +15,8 @@ from .file_utils import (
     sanitize_filename,
     get_output_base_dir,
     validate_date_format,
-    create_date_folder
+    create_date_folder,
+    append_valuable_links_to_json
 )
 from .cache import (
     is_article_analyzed,
@@ -341,6 +342,7 @@ __all__ = [
     'get_output_base_dir',
     'validate_date_format',
     'create_date_folder',
+    'append_valuable_links_to_json',
     # 缓存
     'is_article_analyzed',
     'add_article_to_cache',

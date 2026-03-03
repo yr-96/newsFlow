@@ -33,6 +33,22 @@ except ImportError:
         sys.exit(1)
 
 from .extractor import extract_links_from_url
+from .fetcher import fetch_html_from_url
+
+# 导入HTML RAG模块
+try:
+    from .html_rag.retriever import retrieve_relevant_chunks
+    HTML_RAG_AVAILABLE = True
+    logger.info("✅ HTML RAG模块导入成功，retrieve_relevant_html_chunks 工具可用")
+except ImportError as e:
+    logger.warning(f"⚠️ 无法导入HTML RAG模块: {e}")
+    logger.warning(f"   HTML RAG检索功能将不可用")
+    HTML_RAG_AVAILABLE = False
+    retrieve_relevant_chunks = None
+except Exception as e:
+    logger.warning(f"⚠️ 导入HTML RAG模块时发生错误: {e}")
+    HTML_RAG_AVAILABLE = False
+    retrieve_relevant_chunks = None
 
 # 导入writer模块（使用相对导入）
 try:
@@ -40,6 +56,7 @@ try:
         normalize_recipients,
         save_markdown_file, 
         create_date_folder, 
+        append_valuable_links_to_json,
         load_config,
         send_email_from_date_folder
     )
@@ -99,9 +116,27 @@ async def list_tools() -> List[Tool]:
                 },
                 "required": ["url"]
             }
+        ),
+        Tool(
+            name="fetch_html_from_url",
+            description="从指定URL获取页面完整HTML内容。使用requests获取，适用于文章、博客、技术文档等静态或服务端渲染页面。返回HTML源码和页面标题，可用于内容提取和摘要生成。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "页面URL，如文章链接、GitHub仓库等"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "请求超时秒数（可选，默认30）"
+                    }
+                },
+                "required": ["url"]
+            }
         )
     ]
-    logger.info(f"✅ 基础工具已添加: extract_links_from_url")
+    logger.info(f"✅ 基础工具已添加: extract_links_from_url, fetch_html_from_url")
     
     # 如果writer模块可用，添加writer工具
     if WRITER_AVAILABLE:
@@ -151,7 +186,7 @@ async def list_tools() -> List[Tool]:
             ),
             Tool(
                 name="create_date_folder",
-                description="创建日期文件夹（YYYY-MM-DD格式）。如果文件夹已存在则不重复创建。",
+                description="创建日期文件夹（YYYY-MM-DD格式），并在其中初始化 valuable_links.json 文件。如果文件夹已存在则不重复创建。",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -161,6 +196,36 @@ async def list_tools() -> List[Tool]:
                         }
                     },
                     "required": []
+                }
+            ),
+            Tool(
+                name="append_valuable_links_to_json",
+                description="将指定网站识别出的有价值链接追加到日期文件夹中的 valuable_links.json 文件。每收集完一个网站后调用，传入网站名称和链接列表。",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "date": {
+                            "type": "string",
+                            "description": "日期（YYYY-MM-DD格式），如 2026-03-03"
+                        },
+                        "site_name": {
+                            "type": "string",
+                            "description": "来源网站名称，如 'Hacker News'、'TLDR'、'GitHub Trending'"
+                        },
+                        "links": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "url": {"type": "string", "description": "链接URL"},
+                                    "text": {"type": "string", "description": "链接文本"}
+                                },
+                                "required": ["url"]
+                            },
+                            "description": "该网站识别出的有价值链接数组"
+                        }
+                    },
+                    "required": ["date", "site_name", "links"]
                 }
             ),
             Tool(
@@ -199,7 +264,7 @@ async def list_tools() -> List[Tool]:
             )
         ]
         tools.extend(writer_tools)
-        logger.info(f"✅ Writer工具已添加: save_markdown_file, create_date_folder, send_email_from_date_folder")
+        logger.info(f"✅ Writer工具已添加: save_markdown_file, create_date_folder, append_valuable_links_to_json, send_email_from_date_folder")
     else:
         logger.warning("⚠️  writer模块不可用，仅提供基础工具")
     
@@ -228,6 +293,40 @@ async def list_tools() -> List[Tool]:
         ]
         tools.extend(oss_tools)
         logger.info(f"✅ OSS上传工具已添加: upload_file_to_oss")
+    
+    # 如果HTML RAG模块可用，添加HTML RAG检索工具
+    if HTML_RAG_AVAILABLE:
+        logger.info("🔍 HTML RAG模块可用，正在添加 HTML RAG 检索工具...")
+        html_rag_tools = [
+            Tool(
+                name="retrieve_relevant_html_chunks",
+                description="从HTML文本中检索与查询问题最相关的文本块。使用RAG架构，将HTML分块并向量化，通过相似度检索返回最相关的内容。支持多语言HTML和查询（50+语言）。",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "html_text": {
+                            "type": "string",
+                            "description": "HTML结构的文本内容（支持多语言）"
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "查询问题，用于检索相关文本块（支持多语言，如中文、英文、日文等）"
+                        },
+                        "top_k": {
+                            "type": "integer",
+                            "description": "返回最相关的K个文本块（可选，默认从config.yaml读取，最终默认3）"
+                        },
+                        "min_similarity": {
+                            "type": "number",
+                            "description": "最小相似度阈值（0-1，可选，默认从config.yaml读取，最终默认0.3）"
+                        }
+                    },
+                    "required": ["html_text", "query"]
+                }
+            )
+        ]
+        tools.extend(html_rag_tools)
+        logger.info(f"✅ HTML RAG检索工具已添加: retrieve_relevant_html_chunks")
     
     logger.info(f"📊 总共 {len(tools)} 个工具可用")
     
@@ -282,7 +381,56 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 type="text",
                 text=json.dumps(error_result, ensure_ascii=False)
             )]
-    
+
+    elif name == "fetch_html_from_url":
+        url = arguments.get("url")
+        timeout = arguments.get("timeout", 30)
+
+        if not url:
+            error_result = {
+                "success": False,
+                "html": "",
+                "title": "",
+                "url": "",
+                "error": "缺少必需参数: url",
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+
+        try:
+            logger.info(f"调用工具 fetch_html_from_url，URL: {url}")
+
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor, fetch_html_from_url, url, timeout
+            )
+
+            result_json = json.dumps(result, ensure_ascii=False)
+
+            if result.get("success"):
+                logger.info(f"获取HTML成功，长度 {len(result.get('html', ''))} 字符")
+            else:
+                logger.warning(f"获取HTML失败: {result.get('error')}")
+
+            return [TextContent(type="text", text=result_json)]
+
+        except Exception as e:
+            logger.error(f"处理工具调用失败: {str(e)}", exc_info=True)
+            error_result = {
+                "success": False,
+                "html": "",
+                "title": "",
+                "url": url,
+                "error": str(e),
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+
     elif name == "save_markdown_file":
         if not WRITER_AVAILABLE:
             error_result = {
@@ -409,6 +557,76 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             error_result = {
                 "path": "",
                 "success": False,
+                "error": str(e)
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+    
+    elif name == "append_valuable_links_to_json":
+        if not WRITER_AVAILABLE:
+            error_result = {
+                "success": False,
+                "date_folder": "",
+                "site_name": "",
+                "links_count": 0,
+                "error": "writer模块不可用"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        date = arguments.get("date")
+        site_name = arguments.get("site_name")
+        links = arguments.get("links", [])
+        
+        if not date or not site_name:
+            error_result = {
+                "success": False,
+                "date_folder": "",
+                "site_name": site_name or "",
+                "links_count": 0,
+                "error": "缺少必需参数: date 和 site_name"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        try:
+            logger.info(f"调用工具 append_valuable_links_to_json，日期: {date}, 网站: {site_name}, 链接数: {len(links)}")
+            
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor,
+                append_valuable_links_to_json,
+                date,
+                site_name,
+                links
+            )
+            
+            result_json = json.dumps(result, ensure_ascii=False)
+            
+            if result.get("success"):
+                logger.info(f"追加有价值链接成功: {site_name}, {result.get('links_count')} 条")
+            else:
+                logger.error(f"追加有价值链接失败: {result.get('error')}")
+            
+            return [TextContent(
+                type="text",
+                text=result_json
+            )]
+            
+        except Exception as e:
+            logger.error(f"处理工具调用失败: {str(e)}", exc_info=True)
+            error_result = {
+                "success": False,
+                "date_folder": "",
+                "site_name": site_name or "",
+                "links_count": 0,
                 "error": str(e)
             }
             return [TextContent(
@@ -588,6 +806,98 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 "oss_key": oss_key or "",
                 "message": f"上传失败: {str(e)}",
                 "error": str(e)
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+    
+    elif name == "retrieve_relevant_html_chunks":
+        if not HTML_RAG_AVAILABLE:
+            error_result = {
+                "success": False,
+                "query": arguments.get("query", ""),
+                "results": [],
+                "total_chunks": 0,
+                "retrieval_time": 0.0,
+                "error": "HTML RAG模块不可用",
+                "error_type": "MODULE_UNAVAILABLE"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        html_text = arguments.get("html_text")
+        query = arguments.get("query")
+        top_k = arguments.get("top_k")
+        min_similarity = arguments.get("min_similarity")
+        
+        # 参数校验
+        if not html_text or not query:
+            error_result = {
+                "success": False,
+                "query": query or "",
+                "results": [],
+                "total_chunks": 0,
+                "retrieval_time": 0.0,
+                "error": "缺少必需参数: html_text, query",
+                "error_type": "INVALID_PARAMETERS"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        try:
+            # 加载配置
+            config = None
+            if load_config:
+                try:
+                    full_config = load_config()
+                    config = full_config.get('html_rag', {})
+                except Exception as e:
+                    logger.warning(f"加载配置失败，使用默认配置: {e}")
+                    config = {}
+            else:
+                config = {}
+            
+            # 调用检索函数（同步函数，需要在executor中运行）
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor,
+                retrieve_relevant_chunks,
+                html_text,
+                query,
+                top_k,
+                min_similarity,
+                config
+            )
+            
+            # 将结果转换为JSON字符串
+            result_json = json.dumps(result, ensure_ascii=False)
+            
+            if result.get("success"):
+                logger.info(f"检索完成，找到 {len(result.get('results', []))} 个相关chunks")
+            else:
+                logger.error(f"检索失败: {result.get('error')}")
+            
+            return [TextContent(
+                type="text",
+                text=result_json
+            )]
+            
+        except Exception as e:
+            logger.error(f"处理HTML RAG检索失败: {str(e)}", exc_info=True)
+            error_result = {
+                "success": False,
+                "query": query,
+                "results": [],
+                "total_chunks": 0,
+                "retrieval_time": 0.0,
+                "error": f"检索过程出错: {str(e)}",
+                "error_type": "RETRIEVAL_FAILED"
             }
             return [TextContent(
                 type="text",

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "newsflow-extract": {
+      "command": "/Users/yangrui/github/newsFlow/venv/bin/python",
+      "args": ["-m", "mcp_servers.newsflow_extract.server"],
+      "cwd": "/Users/yangrui/github/newsFlow"
+    }
+  }
+}

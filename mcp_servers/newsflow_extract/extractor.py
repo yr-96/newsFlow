@@ -26,16 +26,24 @@ logger = logging.getLogger(__name__)
 
 def extract_links_from_url(url: str) -> Dict[str, Any]:
     """
-    从指定URL提取所有链接
+    从指定URL提取所有有内容的链接
     
     参数:
         url: 网站URL（如 "https://example.com"）
     
     返回:
         {
-            "links": ["url1", "url2", ...],
+            "links": [
+                {"url": "url1", "text": "链接文本内容"},
+                {"url": "url2", "text": "另一个链接文本"},
+                ...
+            ],
             "count": 链接数量
         }
+    
+    说明:
+        - 仅返回有文本内容的 <a> 标签（过滤空链接）
+        - 每个链接携带其 a 标签对应的文本内容，便于识别有价值内容
     
     异常:
         如果访问失败，返回 {"links": [], "count": 0, "error": "错误信息"}
@@ -97,41 +105,54 @@ def extract_links_from_url(url: str) -> Dict[str, Any]:
         # 使用BeautifulSoup解析HTML
         soup = BeautifulSoup(html, 'html.parser')
         
-        # 提取所有<a>标签的href属性
+        # 提取所有有内容的 <a> 标签，携带链接文本
         links = []
+        seen_urls = set()
         base_url = url
-        
+
         for a_tag in soup.find_all('a', href=True):
             href = a_tag.get('href', '').strip()
             if not href:
                 continue
-            
+
             # 过滤特殊链接
             if href.startswith(('javascript:', 'mailto:', 'tel:', '#')):
                 continue
-            
+
             # 转换为绝对路径
             absolute_url = urljoin(base_url, href)
-            
+
             # 验证URL格式
             parsed = urlparse(absolute_url)
             if not parsed.scheme or not parsed.netloc:
                 continue
-            
+
             # 只保留HTTP/HTTPS链接
             if parsed.scheme not in ('http', 'https'):
                 continue
-            
-            links.append(absolute_url)
-        
-        # 去重
-        unique_links = list(dict.fromkeys(links))  # 保持顺序的去重
-        
-        logger.info(f"从 {url} 提取到 {len(unique_links)} 个链接")
-        
+
+            # 提取 a 标签的文本内容
+            link_text = a_tag.get_text(separator=' ', strip=True)
+
+            # 仅保留有内容的链接
+            if not link_text:
+                continue
+
+            # 去重：同一 URL 只保留首次出现（携带其文本）
+            if absolute_url in seen_urls:
+                continue
+            seen_urls.add(absolute_url)
+
+            links.append({
+                "url": absolute_url,
+                "text": link_text,
+            })
+
+        logger.info(f"从 {url} 提取到 {len(links)} 个有内容链接")
+
         return {
-            "links": unique_links,
-            "count": len(unique_links)
+            "links": links,
+            "count": len(links),
         }
         
     except TimeoutException as e:

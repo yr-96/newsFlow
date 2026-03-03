@@ -22,3 +22,7 @@ webdriver-manager>=4.0.0
 # Markdown转HTML
 markdown>=3.4.0
 
+# HTML RAG检索工具
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+
