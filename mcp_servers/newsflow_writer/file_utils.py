@@ -268,3 +268,398 @@ def append_valuable_links_to_json(
             "links_count": 0,
             "error": str(e)
         }
+
+
+def read_valuable_links_json(
+    date: str,
+    config: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    从日期文件夹中读取 valuable_links.json，返回链接列表
+    
+    参数:
+        date: 日期（YYYY-MM-DD格式）
+        config: 配置字典，如果为None则自动加载
+    
+    返回:
+        {
+            "success": true/false,
+            "links": [{"source_site", "url", "text", "summary": {...}?, "error": "..."?}, ...],
+            "date_folder": "日期文件夹路径",
+            "error": "错误信息（如果失败）"
+        }
+    """
+    try:
+        if not validate_date_format(date):
+            return {
+                "success": False,
+                "links": [],
+                "date_folder": "",
+                "error": f"日期格式错误，应为YYYY-MM-DD: {date}"
+            }
+        
+        if config is None:
+            config = load_config()
+        
+        base_dir = get_output_base_dir(config)
+        date_folder = base_dir / date
+        
+        if not date_folder.exists():
+            return {
+                "success": False,
+                "links": [],
+                "date_folder": str(date_folder),
+                "error": f"日期文件夹不存在: {date_folder}"
+            }
+        
+        json_path = date_folder / VALUABLE_LINKS_JSON
+        if not json_path.exists():
+            return {
+                "success": True,
+                "links": [],
+                "date_folder": str(date_folder)
+            }
+        
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        if isinstance(data, dict):
+            all_items = []
+            if "all_links" in data:
+                all_items = data["all_links"]
+            elif "sites" in data:
+                for sname, slinks in data["sites"].items():
+                    for link in slinks:
+                        all_items.append({
+                            "source_site": sname,
+                            "url": link.get("url", ""),
+                            "text": link.get("text", ""),
+                            **{k: v for k, v in link.items() if k not in ("url", "text")}
+                        })
+            data = all_items
+        elif not isinstance(data, list):
+            data = []
+        
+        return {
+            "success": True,
+            "links": data,
+            "date_folder": str(date_folder)
+        }
+        
+    except Exception as e:
+        logger.error(f"读取有价值链接JSON失败: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "links": [],
+            "date_folder": "",
+            "error": str(e)
+        }
+
+
+def read_articles_for_email_from_json(
+    date: str,
+    config: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, str]]:
+    """
+    从日期文件夹的 valuable_links.json 中读取有 summary 的链接，转换为邮件所需的文章格式
+    
+    参数:
+        date: 日期（YYYY-MM-DD格式）
+        config: 配置字典，如果为None则自动加载
+    
+    返回:
+        文章列表，每项包含 original_title, summary, detailed_summary, url
+        仅包含有 summary 的链接，跳过有 error 的
+    """
+    result = read_valuable_links_json(date, config)
+    if not result.get("success"):
+        return []
+    links = result.get("links", [])
+    articles = []
+    for link in links:
+        if "summary" not in link or not isinstance(link.get("summary"), dict):
+            continue
+        s = link["summary"]
+        articles.append({
+            "original_title": s.get("original_title", link.get("text", "未知标题")),
+            "summary": s.get("summary", ""),
+            "detailed_summary": s.get("detailed_summary", ""),
+            "url": link.get("url", "#"),
+        })
+    return articles
+
+
+def update_link_summary_in_json(
+    date: str,
+    url: str,
+    title: str,
+    original_title: str,
+    summary: str,
+    detailed_summary: str,
+    skip_if_exists: bool = True,
+    date_str: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    将链接的总结数据写入 valuable_links.json 中对应链接对象下
+    
+    在 JSON 中查找 url 匹配的链接，为其添加 summary 对象，包含：
+    title, original_title, summary, detailed_summary, date
+    
+    参数:
+        date: 日期（YYYY-MM-DD格式），用于定位日期文件夹
+        url: 链接URL，用于匹配要更新的链接
+        title: 内容标题（格式：中文标题（英文原标题/项目名））
+        original_title: 内容原标题（格式：中文标题（英文原标题/项目名））
+        summary: AI生成的200字简短摘要
+        detailed_summary: AI生成的500-800字详细概括
+        skip_if_exists: 如果该链接已有 summary 则跳过（默认True）
+        date_str: 总结日期（YYYY-MM-DD），可选，默认为 date 参数
+        config: 配置字典，如果为None则自动加载
+    
+    返回:
+        {
+            "success": true/false,
+            "updated": true/false,  # 是否实际更新了（skip时为false）
+            "date_folder": "日期文件夹路径",
+            "url": "链接URL",
+            "error": "错误信息（如果失败）"
+        }
+    """
+    try:
+        if not validate_date_format(date):
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": url,
+                "error": f"日期格式错误，应为YYYY-MM-DD: {date}"
+            }
+        
+        if config is None:
+            config = load_config()
+        
+        base_dir = get_output_base_dir(config)
+        date_folder = base_dir / date
+        
+        if not date_folder.exists():
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": str(date_folder),
+                "url": url,
+                "error": f"日期文件夹不存在: {date_folder}"
+            }
+        
+        json_path = date_folder / VALUABLE_LINKS_JSON
+        if not json_path.exists():
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": str(date_folder),
+                "url": url,
+                "error": f"valuable_links.json 不存在: {json_path}"
+            }
+        
+        summary_date = date_str or date
+        
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        if isinstance(data, dict):
+            all_items = []
+            if "all_links" in data:
+                all_items = data["all_links"]
+            elif "sites" in data:
+                for sname, slinks in data["sites"].items():
+                    for link in slinks:
+                        all_items.append({
+                            "source_site": sname,
+                            "url": link.get("url", ""),
+                            "text": link.get("text", ""),
+                            **{k: v for k, v in link.items() if k not in ("url", "text")}
+                        })
+            data = all_items
+        elif not isinstance(data, list):
+            data = []
+        
+        def _normalize_url(u: str) -> str:
+            u = (u or "").strip()
+            if "?" in u:
+                u = u.split("?")[0]
+            if "#" in u:
+                u = u.split("#")[0]
+            return u.rstrip("/")
+
+        url_normalized = _normalize_url(url)
+        updated = False
+        for item in data:
+            if isinstance(item, dict) and _normalize_url(item.get("url", "")) == url_normalized:
+                if skip_if_exists and item.get("summary"):
+                    return {
+                        "success": True,
+                        "updated": False,
+                        "date_folder": str(date_folder),
+                        "url": url
+                    }
+                item.pop("error", None)  # 成功写入 summary 时移除旧错误
+                item["summary"] = {
+                    "title": title,
+                    "original_title": original_title,
+                    "summary": summary,
+                    "detailed_summary": detailed_summary,
+                    "date": summary_date
+                }
+                updated = True
+                break
+        
+        if not updated:
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": str(date_folder),
+                "url": url,
+                "error": f"未找到匹配的链接: {url}"
+            }
+        
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"更新链接总结到 {json_path}: {url[:50]}...")
+        
+        return {
+            "success": True,
+            "updated": True,
+            "date_folder": str(date_folder),
+            "url": url
+        }
+        
+    except Exception as e:
+        logger.error(f"更新链接总结失败: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "updated": False,
+            "date_folder": "",
+            "url": url,
+            "error": str(e)
+        }
+
+
+def update_link_error_in_json(
+    date: str,
+    url: str,
+    error_message: str,
+    config: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    将链接处理失败时的错误信息写入 valuable_links.json 中对应链接对象下
+    
+    参数:
+        date: 日期（YYYY-MM-DD格式）
+        url: 链接URL
+        error_message: 错误描述
+    
+    返回:
+        同 update_link_summary_in_json
+    """
+    try:
+        if not validate_date_format(date):
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": url,
+                "error": f"日期格式错误，应为YYYY-MM-DD: {date}"
+            }
+        
+        if config is None:
+            config = load_config()
+        
+        base_dir = get_output_base_dir(config)
+        date_folder = base_dir / date
+        
+        if not date_folder.exists():
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": str(date_folder),
+                "url": url,
+                "error": f"日期文件夹不存在: {date_folder}"
+            }
+        
+        json_path = date_folder / VALUABLE_LINKS_JSON
+        if not json_path.exists():
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": str(date_folder),
+                "url": url,
+                "error": f"valuable_links.json 不存在: {json_path}"
+            }
+        
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        if isinstance(data, dict):
+            all_items = []
+            if "all_links" in data:
+                all_items = data["all_links"]
+            elif "sites" in data:
+                for sname, slinks in data["sites"].items():
+                    for link in slinks:
+                        all_items.append({
+                            "source_site": sname,
+                            "url": link.get("url", ""),
+                            "text": link.get("text", ""),
+                            **{k: v for k, v in link.items() if k not in ("url", "text")}
+                        })
+            data = all_items
+        elif not isinstance(data, list):
+            data = []
+        
+        def _normalize_url(u: str) -> str:
+            u = (u or "").strip()
+            if "?" in u:
+                u = u.split("?")[0]
+            if "#" in u:
+                u = u.split("#")[0]
+            return u.rstrip("/")
+
+        url_normalized = _normalize_url(url)
+        updated = False
+        for item in data:
+            if isinstance(item, dict) and _normalize_url(item.get("url", "")) == url_normalized:
+                item["error"] = error_message
+                updated = True
+                break
+        
+        if not updated:
+            return {
+                "success": False,
+                "updated": False,
+                "date_folder": str(date_folder),
+                "url": url,
+                "error": f"未找到匹配的链接: {url}"
+            }
+        
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"记录链接错误到 {json_path}: {url[:50]}... - {error_message}")
+        
+        return {
+            "success": True,
+            "updated": True,
+            "date_folder": str(date_folder),
+            "url": url
+        }
+        
+    except Exception as e:
+        logger.error(f"记录链接错误失败: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "updated": False,
+            "date_folder": "",
+            "url": url,
+            "error": str(e)
+        }

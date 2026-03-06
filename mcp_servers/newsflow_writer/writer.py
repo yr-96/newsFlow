@@ -16,7 +16,11 @@ from .file_utils import (
     get_output_base_dir,
     validate_date_format,
     create_date_folder,
-    append_valuable_links_to_json
+    append_valuable_links_to_json,
+    read_valuable_links_json,
+    read_articles_for_email_from_json,
+    update_link_summary_in_json,
+    update_link_error_in_json,
 )
 from .cache import (
     is_article_analyzed,
@@ -25,7 +29,7 @@ from .cache import (
 from .markdown import (
     generate_markdown_content,
     parse_markdown_file,
-    read_markdown_files_from_folder
+    read_markdown_files_from_folder,
 )
 from .html_generator import generate_email_html
 from .email_sender import (
@@ -173,7 +177,7 @@ def send_email_from_date_folder(
     config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    读取指定日期文件夹中的所有Markdown文件，并发送邮件到指定邮箱（支持多个收件人）
+    读取指定日期文件夹中的 valuable_links.json，提取有 summary 的链接，生成 HTML 邮件并发送到指定邮箱（支持多个收件人）
     
     参数:
         date: 日期（YYYY-MM-DD格式），要读取的日期文件夹
@@ -186,7 +190,7 @@ def send_email_from_date_folder(
             "success": True/False,
             "date": "日期",
             "emails": "收件人邮箱列表",
-            "files_count": 读取的Markdown文件数量,
+            "items_count": 读取的有效链接数量（有 summary 的）,
             "message": "成功/错误消息",
             "recipients": "成功发送的收件人列表",
             "failed": "发送失败的收件人列表（如果有）",
@@ -206,7 +210,7 @@ def send_email_from_date_folder(
                 "success": False,
                 "date": date,
                 "emails": [],
-                "files_count": 0,
+                "items_count": 0,
                 "message": f"日期格式错误，应为YYYY-MM-DD: {date}",
                 "recipients": [],
                 "failed": [],
@@ -230,7 +234,7 @@ def send_email_from_date_folder(
                     "success": False,
                     "date": date,
                     "emails": [],
-                    "files_count": 0,
+                    "items_count": 0,
                     "message": "未指定收件人邮箱，请在参数中提供recipient_email或在config.yaml中配置email.recipient_emails",
                     "recipients": [],
                     "failed": [],
@@ -245,7 +249,7 @@ def send_email_from_date_folder(
                 "success": False,
                 "date": date,
                 "emails": recipient_list,
-                "files_count": 0,
+                "items_count": 0,
                 "message": "没有有效的收件人邮箱地址",
                 "recipients": [],
                 "failed": [],
@@ -262,26 +266,26 @@ def send_email_from_date_folder(
                 "success": False,
                 "date": date,
                 "emails": recipient_list,
-                "files_count": 0,
+                "items_count": 0,
                 "message": f"日期文件夹不存在: {date_folder}",
                 "recipients": [],
                 "failed": recipient_list,
                 "error": "文件夹不存在"
             }
         
-        # 读取所有Markdown文件
-        articles = read_markdown_files_from_folder(date_folder)
+        # 从 valuable_links.json 读取有 summary 的链接
+        articles = read_articles_for_email_from_json(date, config)
         
         if not articles:
             return {
                 "success": False,
                 "date": date,
                 "emails": recipient_list,
-                "files_count": 0,
-                "message": f"日期文件夹中没有找到可用的Markdown文件: {date_folder}",
+                "items_count": 0,
+                "message": f"日期文件夹的 valuable_links.json 中没有找到有 summary 的链接: {date_folder}",
                 "recipients": [],
                 "failed": recipient_list,
-                "error": "没有找到Markdown文件"
+                "error": "没有找到可发送的内容"
             }
         
         # 生成邮件主题
@@ -307,7 +311,7 @@ def send_email_from_date_folder(
             "success": send_result.get("success", False),
             "date": date,
             "emails": recipient_list,
-            "files_count": len(articles),
+            "items_count": len(articles),
             "message": send_result.get("message", "邮件发送完成"),
             "recipients": send_result.get("recipients", []),
             "failed": send_result.get("failed", []),
@@ -325,7 +329,7 @@ def send_email_from_date_folder(
             "success": False,
             "date": date,
             "emails": normalize_recipients(recipient_email) if recipient_email else [],
-            "files_count": 0,
+            "items_count": 0,
             "message": f"发送邮件功能失败: {str(e)}",
             "recipients": [],
             "failed": [],
@@ -343,6 +347,9 @@ __all__ = [
     'validate_date_format',
     'create_date_folder',
     'append_valuable_links_to_json',
+    'read_valuable_links_json',
+    'update_link_summary_in_json',
+    'update_link_error_in_json',
     # 缓存
     'is_article_analyzed',
     'add_article_to_cache',

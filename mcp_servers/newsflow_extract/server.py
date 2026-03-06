@@ -57,6 +57,9 @@ try:
         save_markdown_file, 
         create_date_folder, 
         append_valuable_links_to_json,
+        read_valuable_links_json,
+        update_link_summary_in_json,
+        update_link_error_in_json,
         load_config,
         send_email_from_date_folder
     )
@@ -229,8 +232,82 @@ async def list_tools() -> List[Tool]:
                 }
             ),
             Tool(
+                name="read_valuable_links_json",
+                description="从日期文件夹中读取 valuable_links.json，返回链接列表。用于第四步逐个处理链接时获取待处理链接。",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "date": {
+                            "type": "string",
+                            "description": "日期（YYYY-MM-DD格式），如 2026-03-04"
+                        }
+                    },
+                    "required": ["date"]
+                }
+            ),
+            Tool(
+                name="update_link_summary_in_json",
+                description="将链接的AI总结数据写入 valuable_links.json 中对应链接对象下。替代 save_markdown_file，将 title、summary、detailed_summary 等保存到 JSON。",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "date": {
+                            "type": "string",
+                            "description": "日期（YYYY-MM-DD格式）"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "链接URL，用于匹配要更新的链接"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "内容标题（格式：中文标题（英文原标题/项目名））"
+                        },
+                        "original_title": {
+                            "type": "string",
+                            "description": "内容原标题（格式：中文标题（英文原标题/项目名））"
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "AI生成的200字简短摘要"
+                        },
+                        "detailed_summary": {
+                            "type": "string",
+                            "description": "AI生成的500-800字详细概括"
+                        },
+                        "skip_if_exists": {
+                            "type": "boolean",
+                            "description": "如果该链接已有 summary 则跳过（默认true）"
+                        }
+                    },
+                    "required": ["date", "url", "title", "original_title", "summary", "detailed_summary"]
+                }
+            ),
+            Tool(
+                name="update_link_error_in_json",
+                description="将链接处理失败时的错误信息写入 valuable_links.json 中对应链接对象下。",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "date": {
+                            "type": "string",
+                            "description": "日期（YYYY-MM-DD格式）"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "链接URL"
+                        },
+                        "error_message": {
+                            "type": "string",
+                            "description": "错误描述"
+                        }
+                    },
+                    "required": ["date", "url", "error_message"]
+                }
+            ),
+            Tool(
                 name="send_email_from_date_folder",
-                description="读取指定日期文件夹中的所有Markdown文件，并发送邮件到指定邮箱（支持多个收件人）。将读取日期文件夹下的所有.md文件，解析文章信息（原名、AI总结、原文链接），生成格式化的HTML邮件并发送到所有指定的收件人。",
+                description="读取指定日期文件夹中的 valuable_links.json，提取有 summary 的链接，生成 HTML 邮件并发送到指定邮箱（支持多个收件人）。将解析每篇内容的原名、AI总结、详细概括、原文链接，生成格式化的 HTML 邮件并发送到所有指定的收件人。",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -264,7 +341,7 @@ async def list_tools() -> List[Tool]:
             )
         ]
         tools.extend(writer_tools)
-        logger.info(f"✅ Writer工具已添加: save_markdown_file, create_date_folder, append_valuable_links_to_json, send_email_from_date_folder")
+        logger.info(f"✅ Writer工具已添加: save_markdown_file, create_date_folder, append_valuable_links_to_json, read_valuable_links_json, update_link_summary_in_json, update_link_error_in_json, send_email_from_date_folder")
     else:
         logger.warning("⚠️  writer模块不可用，仅提供基础工具")
     
@@ -634,13 +711,183 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 text=json.dumps(error_result, ensure_ascii=False)
             )]
     
+    elif name == "read_valuable_links_json":
+        if not WRITER_AVAILABLE:
+            error_result = {
+                "success": False,
+                "links": [],
+                "date_folder": "",
+                "error": "writer模块不可用"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        date = arguments.get("date")
+        if not date:
+            error_result = {
+                "success": False,
+                "links": [],
+                "date_folder": "",
+                "error": "缺少必需参数: date"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        try:
+            logger.info(f"调用工具 read_valuable_links_json，日期: {date}")
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(executor, read_valuable_links_json, date)
+            result_json = json.dumps(result, ensure_ascii=False)
+            return [TextContent(type="text", text=result_json)]
+        except Exception as e:
+            logger.error(f"处理工具调用失败: {str(e)}", exc_info=True)
+            error_result = {
+                "success": False,
+                "links": [],
+                "date_folder": "",
+                "error": str(e)
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+    
+    elif name == "update_link_summary_in_json":
+        if not WRITER_AVAILABLE:
+            error_result = {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": "",
+                "error": "writer模块不可用"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        date = arguments.get("date")
+        url = arguments.get("url")
+        title = arguments.get("title")
+        original_title = arguments.get("original_title")
+        summary = arguments.get("summary")
+        detailed_summary = arguments.get("detailed_summary")
+        skip_if_exists = arguments.get("skip_if_exists", True)
+        
+        if not all([date, url, title, original_title, summary, detailed_summary]):
+            error_result = {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": url or "",
+                "error": "缺少必需参数: date, url, title, original_title, summary, detailed_summary"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        try:
+            logger.info(f"调用工具 update_link_summary_in_json，URL: {url[:50]}...")
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor,
+                update_link_summary_in_json,
+                date,
+                url,
+                title,
+                original_title,
+                summary,
+                detailed_summary,
+                skip_if_exists,
+            )
+            result_json = json.dumps(result, ensure_ascii=False)
+            return [TextContent(type="text", text=result_json)]
+        except Exception as e:
+            logger.error(f"处理工具调用失败: {str(e)}", exc_info=True)
+            error_result = {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": url or "",
+                "error": str(e)
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+    
+    elif name == "update_link_error_in_json":
+        if not WRITER_AVAILABLE:
+            error_result = {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": "",
+                "error": "writer模块不可用"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        date = arguments.get("date")
+        url = arguments.get("url")
+        error_message = arguments.get("error_message", "")
+        
+        if not date or not url:
+            error_result = {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": url or "",
+                "error": "缺少必需参数: date, url, error_message"
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+        
+        try:
+            logger.info(f"调用工具 update_link_error_in_json，URL: {url[:50]}...")
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                executor,
+                update_link_error_in_json,
+                date,
+                url,
+                error_message,
+            )
+            result_json = json.dumps(result, ensure_ascii=False)
+            return [TextContent(type="text", text=result_json)]
+        except Exception as e:
+            logger.error(f"处理工具调用失败: {str(e)}", exc_info=True)
+            error_result = {
+                "success": False,
+                "updated": False,
+                "date_folder": "",
+                "url": url or "",
+                "error": str(e)
+            }
+            return [TextContent(
+                type="text",
+                text=json.dumps(error_result, ensure_ascii=False)
+            )]
+    
     elif name == "send_email_from_date_folder":
         if not WRITER_AVAILABLE:
             error_result = {
                 "success": False,
                 "date": "",
                 "email": "",
-                "files_count": 0,
+                "items_count": 0,
                 "message": "writer模块不可用",
                 "error": "writer模块不可用"
             }
@@ -658,7 +905,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 "success": False,
                 "date": "",
                 "email": recipient_email or "",
-                "files_count": 0,
+                "items_count": 0,
                 "message": "缺少必需参数: date",
                 "error": "缺少必需参数"
             }
@@ -694,12 +941,12 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             
             if result.get("success"):
                 recipients_list = result.get("recipients", [])
-                files_count = result.get("files_count", 0)
+                items_count = result.get("items_count", 0)
                 if recipients_list:
                     recipients_str = ", ".join(recipients_list)
-                    logger.info(f"邮件发送成功: {len(recipients_list)}个收件人 ({recipients_str}), 共 {files_count} 篇文章")
+                    logger.info(f"邮件发送成功: {len(recipients_list)}个收件人 ({recipients_str}), 共 {items_count} 篇内容")
                 else:
-                    logger.info(f"邮件发送完成，共 {files_count} 篇文章")
+                    logger.info(f"邮件发送完成，共 {items_count} 篇内容")
                 # 检查是否有失败的收件人
                 failed_list = result.get("failed", [])
                 if failed_list:
@@ -727,7 +974,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
                 "success": False,
                 "date": date,
                 "emails": emails_list,
-                "files_count": 0,
+                "items_count": 0,
                 "message": f"发送邮件失败: {str(e)}",
                 "recipients": [],
                 "failed": [],
