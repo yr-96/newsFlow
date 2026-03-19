@@ -415,20 +415,6 @@ python -c "import mcp, selenium, bs4, yaml, webdriver_manager; print('所有依�
 - **webdriver-manager**：ChromeDriver自动管理
 - **Cursor AI**：AI能力提供者（链接识别、摘要生成）
 
-## 📊 开发状态
-
-- [x] 项目规划和技术方案设计
-- [x] 项目结构搭建
-- [x] MCP服务实现
-  - [x] URL提取服务（Selenium + BeautifulSoup）
-  - [x] Markdown写入服务（文件管理 + 缓存）
-  - [x] 邮件发送服务
-  - [x] OSS上传服务
-- [x] MCP服务文档编写
-- [x] Cursor集成测试
-- [x] 使用文档完善
-- [ ] 单元测试（计划中）
-
 ## 📝 许可证
 
 本项目为个人项目，仅供学习和研究使用。

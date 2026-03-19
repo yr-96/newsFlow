@@ -120,6 +120,13 @@ def generate_email_html(articles: List[Dict[str, str]], date: str) -> str:
             word-wrap: break-word;
             overflow-wrap: break-word;
         }}
+        .article-original-title {{
+            color: #718096;
+            font-size: 14px;
+            margin-bottom: 16px;
+            font-weight: 400;
+            line-height: 1.4;
+        }}
         .article-summary {{
             color: #4a5568;
             margin: 16px 0;
@@ -395,7 +402,8 @@ def generate_email_html(articles: List[Dict[str, str]], date: str) -> str:
     
     articles_html = ""
     for index, article in enumerate(articles):
-        title = article.get("original_title", "未知标题")
+        title = article.get("title", "未知标题")
+        original_title = article.get("original_title", "未知标题")
         summary = article.get("summary", "")
         detailed_summary = article.get("detailed_summary", "")
         url = article.get("url", "#")
@@ -428,6 +436,7 @@ def generate_email_html(articles: List[Dict[str, str]], date: str) -> str:
         article_html = f"""
         <div class="article">
             <div class="article-title">{title}</div>
+            <div class="article-original-title">{original_title}</div>
             <div class="article-summary">{summary}</div>
 """
         

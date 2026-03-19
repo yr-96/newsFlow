@@ -381,6 +381,7 @@ def read_articles_for_email_from_json(
             continue
         s = link["summary"]
         articles.append({
+            "title": s.get("title", ""),
             "original_title": s.get("original_title", link.get("text", "未知标题")),
             "summary": s.get("summary", ""),
             "detailed_summary": s.get("detailed_summary", ""),
