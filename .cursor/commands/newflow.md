@@ -139,19 +139,20 @@
    
    **b. 详细概括（detailed_summary）**：
    - 用通俗易懂的语言，对内容做大致描述即可
+   - **推荐使用 Markdown 格式**（如小标题、列表、**加粗**关键句），层次更清晰、扫读更省力；后续生成邮件/HTML 时会自动将 Markdown 转为排版良好的内容
    - **对于文章类**：简要介绍背景、主要观点和结论，不必严格分点
    - **对于 GitHub 项目**：大致说明项目用途、主要功能、技术栈和适用场景
    - 保持轻松、口语化风格，篇幅适中（约 300-500 字）
    - 可适当使用表情符号，但不要过度
 
-3. **写入 JSON（替代保存 Markdown）**：
+3. **写入 JSON**：
    - 调用 MCP 工具 `update_link_summary_in_json`，传入以下参数：
      - `date`: 今天的日期（YYYY-MM-DD格式）
      - `url`: 内容原始URL（文章链接或 GitHub 仓库链接）
-     - `title`: 内容标题（格式：中文标题（英文原标题/项目名））
-     - `original_title`: 内容原标题（格式：中文标题（英文原标题/项目名））
+     - `title`: 内容标题（格式：中文标题）
+     - `original_title`: 内容原标题（格式：原标题）
      - `summary`: AI生成的200字简短摘要
-     - `detailed_summary`: AI生成的详细概括，用通俗易懂的语言大致描述内容（**必须生成，不能为空**）
+     - `detailed_summary`: AI生成的详细概括，用通俗易懂结构清晰的语言大致描述内容，推荐使用md格式（**必须生成，不能为空**）
      - `skip_if_exists`: `true`（如果该链接已有 summary 则跳过）
    - 该工具会将 `summary` 对象（含 title、original_title、summary、detailed_summary、date）写入 `valuable_links.json` 中对应链接下
 

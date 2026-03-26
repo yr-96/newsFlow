@@ -7,17 +7,14 @@
 # 或使用官方包: pip install @modelcontextprotocol/server-python
 mcp[cli]>=1.0.0
 
-# 浏览器自动化（支持CSR网站）
-selenium>=4.0.0
+# 浏览器自动化（4.6+ 内置 Selenium Manager，自动匹配 ChromeDriver）
+selenium>=4.6.0
 
 # HTML解析
 beautifulsoup4>=4.12.0
 
 # 配置文件解析
 pyyaml>=6.0
-
-# ChromeDriver自动管理
-webdriver-manager>=4.0.0
 
 # Markdown转HTML
 markdown>=3.4.0

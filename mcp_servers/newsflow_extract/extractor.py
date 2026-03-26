@@ -7,13 +7,10 @@ import sys
 from typing import List, Dict, Any
 from urllib.parse import urljoin, urlparse
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException, TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
-from requests.exceptions import ConnectionError as RequestsConnectionError
+
+from .chrome_options import build_chrome_options
 from bs4 import BeautifulSoup
-import os
-import glob
 
 # 配置日志（输出到stderr）
 logging.basicConfig(
@@ -50,43 +47,9 @@ def extract_links_from_url(url: str) -> Dict[str, Any]:
     """
     driver = None
     try:
-        # 配置Chrome无头模式
-        options = Options()
-        options.add_argument("--headless")  # 无头模式，不显示浏览器窗口
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")  # 在服务器环境下可能需要
-        options.add_argument("--disable-dev-shm-usage")  # 避免共享内存问题
-        options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        
-        # 创建WebDriver实例
-        from selenium.webdriver.chrome.service import Service
-        
-        # 尝试获取ChromeDriver路径，处理网络错误
-        try:
-            driver_path = ChromeDriverManager().install()
-        except (RequestsConnectionError, Exception) as e:
-            error_msg = str(e)
-            # 检查是否是网络连接错误
-            if isinstance(e, RequestsConnectionError) or "Could not reach host" in error_msg or "Are you offline" in error_msg:
-                # 网络连接失败，尝试使用缓存的ChromeDriver
-                logger.warning(f"无法下载ChromeDriver（网络问题），尝试使用缓存的驱动...")
-                cache_path = os.path.expanduser("~/.wdm/drivers/chromedriver")
-                if os.path.exists(cache_path):
-                    # 查找缓存目录中的最新版本
-                    cached_drivers = glob.glob(f"{cache_path}/**/chromedriver*", recursive=True)
-                    if cached_drivers:
-                        driver_path = max(cached_drivers, key=os.path.getmtime)
-                        logger.info(f"使用缓存的ChromeDriver: {driver_path}")
-                    else:
-                        raise Exception("无法下载ChromeDriver且没有找到缓存的驱动。请检查网络连接或手动安装ChromeDriver。")
-                else:
-                    raise Exception(f"无法下载ChromeDriver: {error_msg}。请检查网络连接。")
-            else:
-                # 其他类型的错误，直接抛出
-                raise
-        
-        service = Service(driver_path)
-        driver = webdriver.Chrome(service=service, options=options)
+        options = build_chrome_options(headless=True)
+        # 使用 Selenium 4.6+ 内置 Selenium Manager 自动匹配 Chrome / ChromeDriver，勿手动指定 Service(path)
+        driver = webdriver.Chrome(options=options)
         
         # 设置隐式等待
         driver.implicitly_wait(5)
